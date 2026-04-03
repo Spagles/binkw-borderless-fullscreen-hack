@@ -2,35 +2,40 @@
 #include <stdio.h>
 #include <assert.h>
 
+typedef struct title_t {
+	char* prefix;
+	char* suffix;
+} title_t;
+
+title_t titles[] = {
+	{"LEGO", "Batman"},
+	{"Fallout: New Vegas", "\0"}
+};
+
 BOOL CALLBACK checkWindow(HWND hWnd, LPARAM lParam) {
-    /*
-        get the window title, check if includes the words 'lego' and 'batman
-        and ensure the size matches (in order to prevent false positives)
+	for (size_t i = 0; i < sizeof(titles) / sizeof(title_t); i++) {
+		char* prefix = titles[i].prefix;
+		size_t prefix_len = strlen(prefix);
 
-        it's like this to avoid dealing with microsoft utf nonsense
-    */
+		char* suffix = titles[i].suffix;
+		size_t suffix_len = strlen(suffix);
 
-	char prefix[] = "LEGO";
-	char suffix[] = "Batman";
+		char title[256];
+		int size = GetWindowTextA(hWnd, title, sizeof(title));
+		if (size <= prefix_len) return TRUE;
 
-	char title[256];
-    int size = GetWindowTextA(hWnd, title, sizeof(title));
-	if (size <= sizeof(suffix)) return TRUE;
+		if (strncmp(title, prefix, prefix_len) != 0)
+			return TRUE;
 
-	/* skip this case if the title does not start with the prefix 'LEGO' */
-    if (strncmp(title, prefix, sizeof(prefix) != 0))
+		if (suffix_len == 0 || strncmp(&title[size - suffix_len], suffix, suffix_len) == 0 ||
+			(strstr(title, suffix) && size == 13)
+		) {
+			*(HWND*)lParam = hWnd;
+			return FALSE;
+		}
+
 		return TRUE;
-
-	/* end with this case if the suffix is 'Batman' or
-	 * if the suffix 'Batman' is in the title and the title is only 13 chars long ('LEGO Batman' + reserved logo) */
-	if (strncmp(&title[size - sizeof(suffix)], suffix, sizeof(suffix)) == 0 ||
-		(strstr(title, suffix) && size == 13)
-	) {
-        *(HWND*)lParam = hWnd;
-        return FALSE;
-    }
-
-    return TRUE;
+	}
 }
 
 DWORD hook(LPVOID lpThreadParameter) {
