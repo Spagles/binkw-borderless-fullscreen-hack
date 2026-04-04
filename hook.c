@@ -97,31 +97,33 @@ DWORD hook(LPVOID lpThreadParameter) {
 		fclose(file);
 	}
 
-	size_t lastIndex = 0;
-	size_t title_count = 1;
-
 	title_t* root = (title_t*)malloc(sizeof(title_t));
 	title_t* cur = root;
 	memset(cur, 0, sizeof(*cur));
 
-	for (size_t i = 0; i < count; i++) {
-		if (buffer[i] == '\n' || i == count - 1) {
-			cur->data = &buffer[i];
-			cur->len = i - lastIndex;
+	size_t i = 0;
+	while (1) {
+		cur->data = &buffer[i];
 
-			lastIndex = i;
-			title_count += 1;
+		size_t index = i;
+		for (; i < count && buffer[index] != '\n' && buffer[index] != '\0'; index++);
 
-			if (i == count - 1) {
-				cur->next = (title_t*)malloc(sizeof(title_t));
-				memset(cur->next, 0, sizeof(*cur));
-				cur = cur->next;
-			}
+		cur->len = index - i;
+		i = index + 1;
+
+		if (i >= count) {
+			break;
 		}
+
+		cur->next = (title_t*)malloc(sizeof(title_t));
+		memset(cur->next, 0, sizeof(*cur));
+		cur = cur->next;
 	}
 
     while (info.hWnd == NULL) {
 		for (title_t* cur = root; cur; cur = cur->next) {
+			if (cur->len == 0) continue;
+
 			info.title = cur->data;
 			info.title_len = cur->len;
 			EnumWindows(checkWindow, (LPARAM)&info);
@@ -131,8 +133,14 @@ DWORD hook(LPVOID lpThreadParameter) {
             Sleep(100);
     }
 
-	if (buffer != default_titles) {
+	if (buffer != titles) {
 		free(buffer);
+	}
+
+	while (root != NULL) {
+		title_t* next = root->next;
+		free(root);
+		root = next;
 	}
 
 	/* get the monitor that the window is on (or the primary monitor) and figure out its size */
