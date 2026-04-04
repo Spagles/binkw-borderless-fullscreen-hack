@@ -3,7 +3,21 @@
 #include <stdio.h>
 #include <assert.h>
 
-#include "titles.h"
+const char default_titles[] =
+	"LEGO® Batman™\n"
+	"LEGO Batman™\n"
+	"LEGO® Batman\n"
+	"LEGO Batman\n"
+	"LEGO� Batman�\n"
+	"LEGO� Batman\n"
+	"LEGO Batman�\n"
+	"Fallout: New Vegas";
+
+typedef struct title_t {
+	char* data;
+	size_t len;
+	struct title_t* next;
+} title_t;
 
 typedef struct info_t {
 	const char* title;
@@ -69,16 +83,57 @@ DWORD hook(LPVOID lpThreadParameter) {
 	info_t info;
 	info.hWnd = NULL;
 
+	char* buffer = (char*)default_titles;
+	size_t count = sizeof(default_titles);
+
+	FILE* file = fopen("title_list.txt", "r");
+	if (file != NULL) {
+		fseek(file, 0, SEEK_END);
+		count = ftell(file);
+		fseek(file, 0, SEEK_SET);
+
+		buffer = (char*)malloc(count);
+		fread(buffer, 1, count, file);
+		fclose(file);
+	}
+
+	size_t lastIndex = 0;
+	size_t title_count = 1;
+
+	title_t* root = (title_t*)malloc(sizeof(title_t));
+	title_t* cur = root;
+	memset(cur, 0, sizeof(*cur));
+
+	for (size_t i = 0; i < count; i++) {
+		if (buffer[i] == '\n' || i == count - 1) {
+			cur->data = &buffer[i];
+			cur->len = i - lastIndex;
+
+			lastIndex = i;
+			title_count += 1;
+
+			if (i == count - 1) {
+				cur->next = (title_t*)malloc(sizeof(title_t));
+				memset(cur->next, 0, sizeof(*cur));
+				cur = cur->next;
+			}
+		}
+	}
+
     while (info.hWnd == NULL) {
-		for (size_t i = 0; i < (sizeof(titles) / sizeof(char*)); i++) {
-			info.title = titles[i];
-			info.title_len = strlen(info.title);
+		for (title_t* cur = root; cur; cur = cur->next) {
+			info.title = cur->data;
+			info.title_len = cur->len;
 			EnumWindows(checkWindow, (LPARAM)&info);
 		}
 
         if (info.hWnd == NULL) /* If no window is found, the game window probably isn't open, lets wait before we check again */
             Sleep(100);
     }
+
+	if (buffer != default_titles) {
+		free(buffer);
+	}
 
 	/* get the monitor that the window is on (or the primary monitor) and figure out its size */
 	HMONITOR src = MonitorFromWindow(info.hWnd, MONITOR_DEFAULTTOPRIMARY);
@@ -97,9 +152,6 @@ DWORD hook(LPVOID lpThreadParameter) {
 	/* Make the game's window borderless fullscreen */
 	SetWindowLong(info.hWnd, GWL_STYLE, lStyle); // (WS_POPUP | WS_VISIBLE);
 	SetWindowPos(info.hWnd, NULL, 0, 0, width, height, SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOOWNERZORDER);
-
-
-
 	return 0;
 }
 
