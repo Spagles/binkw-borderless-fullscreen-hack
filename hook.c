@@ -1,69 +1,106 @@
+#include <wchar.h>
 #include <windows.h>
 #include <stdio.h>
 #include <assert.h>
 
-typedef struct title_t {
-	char* prefix;
-	char* suffix;
-} title_t;
+#include "titles.h"
 
-title_t titles[] = {
-	{"LEGO", "Batman"},
-	{"Fallout: New Vegas", "\0"}
-};
+typedef struct info_t {
+	const char* title;
+	int title_len;
+	HWND hWnd;
+} info_t;
+
+DWORD debug(LPVOID lpThreadParameter) {
+    MessageBoxA(NULL, (char*)lpThreadParameter, (char*)lpThreadParameter, MB_ICONERROR);
+	return 0;
+}
+
+int createUTF8FromWideStringWin32(const WCHAR* source, char* output, size_t max) {
+    int size = 0;
+    if (source == NULL) {
+        return 0;
+	}
+	size = WideCharToMultiByte(CP_UTF8, 0, source, -1, NULL, 0, NULL, NULL);
+	if (!size) {
+		return 0;
+	}
+
+	if (size > (int)max)
+		size = (int)max;
+
+	if (!WideCharToMultiByte(CP_UTF8, 0, source, -1, output, size, NULL, NULL)) {
+		return 0;
+	}
+
+	output[size] = 0;
+	return size;
+}
 
 BOOL CALLBACK checkWindow(HWND hWnd, LPARAM lParam) {
-	for (size_t i = 0; i < sizeof(titles) / sizeof(title_t); i++) {
-		char* prefix = titles[i].prefix;
-		size_t prefix_len = strlen(prefix);
+	info_t* info = (info_t*)lParam;
 
-		char* suffix = titles[i].suffix;
-		size_t suffix_len = strlen(suffix);
-
-		char title[256];
-		int size = GetWindowTextA(hWnd, title, sizeof(title));
-		if (size <= prefix_len) return TRUE;
-
-		if (strncmp(title, prefix, prefix_len) != 0)
-			return TRUE;
-
-		if (suffix_len == 0 || strncmp(&title[size - suffix_len], suffix, suffix_len) == 0 ||
-			(strstr(title, suffix) && size == 13)
-		) {
-			*(HWND*)lParam = hWnd;
-			return FALSE;
-		}
-
+	if (!IsWindowVisible(hWnd) || GetWindow(hWnd, GW_OWNER) != NULL) {
 		return TRUE;
 	}
+
+	char title[256];
+
+	wchar_t wtitle[256];
+	memset(wtitle, 0, sizeof(wtitle));
+
+	GetWindowTextW(hWnd, wtitle, sizeof(wtitle) / sizeof(wchar_t));
+	int count = createUTF8FromWideStringWin32(wtitle, title, sizeof(title)) - 1;
+
+	if (count == 0 || count != info->title_len) {
+		return TRUE;
+	}
+
+	if (strncmp(title, info->title, info->title_len) == 0) {
+		info->hWnd  = hWnd;
+		return FALSE;
+	}
+
+	return TRUE;
 }
 
 DWORD hook(LPVOID lpThreadParameter) {
-    /* find the Lego Batman window (by searching through other windows) */
-    HWND hWnd = NULL;
-    while (hWnd == NULL) {
-        EnumWindows(checkWindow, (LPARAM)&hWnd);
-        if (hWnd == NULL) /* If no window is found, Lego Batman probably isn't open, lets wait before we check again */
+    /* find the game window (by searching through other windows) */
+	info_t info;
+	info.hWnd = NULL;
+
+    while (info.hWnd == NULL) {
+		for (size_t i = 0; i < (sizeof(titles) / sizeof(char*)); i++) {
+			info.title = titles[i];
+			info.title_len = strlen(info.title);
+			EnumWindows(checkWindow, (LPARAM)&info);
+		}
+
+        if (info.hWnd == NULL) /* If no window is found, the game window probably isn't open, lets wait before we check again */
             Sleep(100);
     }
 
-    /* get the monitor that the window is on (or the primary monitor) and figure out its size */
-    HMONITOR src = MonitorFromWindow(hWnd, MONITOR_DEFAULTTOPRIMARY);
+	/* get the monitor that the window is on (or the primary monitor) and figure out its size */
+	HMONITOR src = MonitorFromWindow(info.hWnd, MONITOR_DEFAULTTOPRIMARY);
 
-    MONITORINFOEX  monitorInfo;
+	MONITORINFOEX  monitorInfo;
 
-    monitorInfo.cbSize = sizeof(MONITORINFOEX);
-    GetMonitorInfoA(src, (LPMONITORINFO)&monitorInfo);
+	monitorInfo.cbSize = sizeof(MONITORINFOEX);
+	GetMonitorInfoA(src, (LPMONITORINFO)&monitorInfo);
 
-    UINT width  = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
-    UINT height = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
+	UINT width  = monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left;
+	UINT height = monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top;
 
-    LONG lStyle = GetWindowLong(hWnd, GWL_STYLE);
-    lStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+	LONG lStyle = GetWindowLong(info.hWnd, GWL_STYLE);
+	lStyle &= ~(WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
 
-    /* Make Lego Batman borderless fullscreen */
-    SetWindowLong(hWnd, GWL_STYLE, lStyle); // (WS_POPUP | WS_VISIBLE);
-    SetWindowPos(hWnd, NULL, 0, 0, width, height, SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOOWNERZORDER);
+	/* Make the game's window borderless fullscreen */
+	SetWindowLong(info.hWnd, GWL_STYLE, lStyle); // (WS_POPUP | WS_VISIBLE);
+	SetWindowPos(info.hWnd, NULL, 0, 0, width, height, SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOOWNERZORDER);
+
+
+
+	return 0;
 }
 
 HMODULE hRealBink = NULL;
@@ -185,33 +222,37 @@ void LoadRealBink() {
         DWORD error = GetLastError();
         char errorMsg[256];
         FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, NULL, error, 0, errorMsg, sizeof(errorMsg), NULL);
-
-        MessageBoxA(NULL, errorMsg, "Failed to Load binkw32_real.dll", MB_ICONERROR);
+        MessageBoxA(NULL, "Failed to Load binkw32_real.dll", "Failed to Load binkw32_real.dll", MB_ICONERROR);
         exit(1);
     }
 
+	char err_str[256];
+
     /* Load Function Pointers */
-    #define LOAD_FUNC(name, dll) real_##name = (name##_t)GetProcAddress(hRealBink, #dll); \
-                            if ( real_##name == NULL ) { \
-                                MessageBoxA(NULL, NULL, "Failed to Load binkw32 functions\n", MB_ICONERROR); \
-                                exit(1); \
+    #define LOAD_FUNC(name, dll, fail) real_##name = (name##_t)GetProcAddress(hRealBink, #dll); \
+                            if ( real_##name == NULL) { \
+								sprintf(err_str, "Failed to load binkw32 function (%s)\n", #dll); \
+								if (fail) { \
+									MessageBoxA(NULL, (char*)err_str, (char*)err_str, MB_ICONERROR); \
+									exit(0); \
+								} else CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)err_str, err_str, 0, NULL); \
                             }
 
-    LOAD_FUNC(BinkOpen, _BinkOpen@8)
-    LOAD_FUNC(BinkSetVolume, _BinkSetVolume@12)
-    LOAD_FUNC(BinkCopyToBuffer, _BinkCopyToBuffer@28)
-    LOAD_FUNC(BinkCopyToBufferRect, _BinkCopyToBufferRect@44)
-    LOAD_FUNC(BinkGetRects, _BinkGetRects@8)
-    LOAD_FUNC(BinkClose, _BinkClose@4)
-    LOAD_FUNC(BinkWait, _BinkWait@4)
-    LOAD_FUNC(BinkNextFrame, _BinkNextFrame@4)
-    LOAD_FUNC(BinkShouldSkip, _BinkShouldSkip@4)
-    LOAD_FUNC(BinkDoFrame, _BinkDoFrame@4)
-    LOAD_FUNC(BinkGoto, _BinkGoto@12)
-    LOAD_FUNC(BinkRegisterFrameBuffers, _BinkRegisterFrameBuffers@8)
-    LOAD_FUNC(BinkPause, _BinkPause@8)
-    LOAD_FUNC(BinkGetFrameBuffersInfo, _BinkGetFrameBuffersInfo@8)
-    LOAD_FUNC(BinkSetSoundTrack, _BinkSetSoundTrack@8)
-    LOAD_FUNC(BinkSetSoundSystem, _BinkSetSoundSystem@8)
-    LOAD_FUNC(BinkOpenDirectSound, _BinkOpenDirectSound@4)
+    LOAD_FUNC(BinkOpen, _BinkOpen@8, 1)
+    LOAD_FUNC(BinkSetVolume, _BinkSetVolume@12, 1)
+    LOAD_FUNC(BinkCopyToBuffer, _BinkCopyToBuffer@28, 1)
+    LOAD_FUNC(BinkCopyToBufferRect, _BinkCopyToBufferRect@44, 1)
+    LOAD_FUNC(BinkGetRects, _BinkGetRects@8, 1)
+    LOAD_FUNC(BinkClose, _BinkClose@4, 1)
+    LOAD_FUNC(BinkWait, _BinkWait@4, 1)
+    LOAD_FUNC(BinkNextFrame, _BinkNextFrame@4, 1)
+    LOAD_FUNC(BinkShouldSkip, _BinkShouldSkip@4, 0)
+    LOAD_FUNC(BinkDoFrame, _BinkDoFrame@4, 1)
+    LOAD_FUNC(BinkGoto, _BinkGoto@12, 1)
+    LOAD_FUNC(BinkRegisterFrameBuffers, _BinkRegisterFrameBuffers@8, 1)
+    LOAD_FUNC(BinkPause, _BinkPause@8, 1)
+    LOAD_FUNC(BinkGetFrameBuffersInfo, _BinkGetFrameBuffersInfo@8, 1)
+    LOAD_FUNC(BinkSetSoundTrack, _BinkSetSoundTrack@8, 1)
+    LOAD_FUNC(BinkSetSoundSystem, _BinkSetSoundSystem@8, 1)
+    LOAD_FUNC(BinkOpenDirectSound, _BinkOpenDirectSound@4, 1)
 }
