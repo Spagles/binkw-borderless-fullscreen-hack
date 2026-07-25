@@ -133,7 +133,7 @@ DWORD hook(LPVOID lpThreadParameter) {
             Sleep(100);
     }
 
-	if (buffer != titles) {
+	if (buffer != default_titles) {
 		free(buffer);
 	}
 
