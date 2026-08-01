@@ -47,7 +47,6 @@ int createUTF8FromWideStringWin32(const WCHAR* source, char* output, size_t max)
 		return 0;
 	}
 
-	output[size] = 0;
 	return size;
 }
 
