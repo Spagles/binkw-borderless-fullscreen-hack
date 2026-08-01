@@ -286,7 +286,7 @@ void LoadRealBink() {
         exit(1);
     }
 
-	char err_str[256];
+	static char err_str[256];
 
     /* Load Function Pointers */
     #define LOAD_FUNC(name, dll, fail) real_##name = (name##_t)GetProcAddress(hRealBink, #dll); \
@@ -295,7 +295,7 @@ void LoadRealBink() {
 								if (fail) { \
 									MessageBoxA(NULL, (char*)err_str, (char*)err_str, MB_ICONERROR); \
 									exit(0); \
-								} else CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)err_str, err_str, 0, NULL); \
+								} else CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)debug, err_str, 0, NULL); \
                             }
 
     LOAD_FUNC(BinkOpen, _BinkOpen@8, 1)
