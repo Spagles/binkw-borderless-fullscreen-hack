@@ -93,7 +93,7 @@ DWORD hook(LPVOID lpThreadParameter) {
 		fseek(file, 0, SEEK_SET);
 
 		buffer = (char*)malloc(count);
-		fread(buffer, 1, count, file);
+		count = fread(buffer, 1, count, file);
 		fclose(file);
 	}
 
@@ -106,7 +106,7 @@ DWORD hook(LPVOID lpThreadParameter) {
 		cur->data = &buffer[i];
 
 		size_t index = i;
-		for (; i < count && buffer[index] != '\n' && buffer[index] != '\0'; index++);
+		for (; index < count && buffer[index] != '\n' && buffer[index] != '\0'; index++);
 
 		cur->len = index - i;
 		i = index + 1;
